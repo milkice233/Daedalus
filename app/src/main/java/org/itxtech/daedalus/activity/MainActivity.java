@@ -5,7 +5,6 @@ import android.app.FragmentManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.net.Uri;
 import android.net.VpnService;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
@@ -75,7 +74,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
+        //setSupportActionBar(toolbar); //causes toolbar issues
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.main_drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -91,13 +90,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
         updateUserInterface(getIntent());
         Log.d(TAG, "onCreate");
-    }
-
-    @Override
-    public void onPostCreate(Bundle savedInstanceState) {
-        super.onPostCreate(savedInstanceState);
-
-        currentFragment.checkStatus();
     }
 
     private void switchFragment(ToolbarFragment fragment) {
@@ -250,7 +242,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 switchFragment(new DNSTestFragment());
                 break;
             case R.id.nav_github:
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/iTXTech/Daedalus")));
+                Daedalus.openUri("https://github.com/iTXTech/Daedalus");
                 break;
             case R.id.nav_home:
                 switchFragment(new HomeFragment());

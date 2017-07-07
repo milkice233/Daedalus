@@ -10,7 +10,7 @@ import android.util.Log;
 import de.measite.minidns.DNSMessage;
 import de.measite.minidns.Record;
 import de.measite.minidns.record.A;
-import de.measite.minidns.util.InetAddressUtil;
+import de.measite.minidns.record.AAAA;
 import org.itxtech.daedalus.service.DaedalusVpnService;
 import org.itxtech.daedalus.util.Logger;
 import org.itxtech.daedalus.util.RulesResolver;
@@ -180,7 +180,6 @@ public class UdpProvider extends Provider {
         try {
             outFd.write(deviceWrites.poll());
         } catch (IOException e) {
-            // TODO: Make this more specific, only for: "File descriptor closed"
             throw new DaedalusVpnService.VpnNetworkException("Outgoing VPN output stream closed");
         }
     }
@@ -197,7 +196,6 @@ public class UdpProvider extends Provider {
 
 
         if (length == 0) {
-            // TODO: Possibly change to exception
             Log.w(TAG, "Got empty packet!");
             return;
         }
@@ -247,6 +245,12 @@ public class UdpProvider extends Provider {
      * @param responsePayload The payload of the response
      */
     void handleDnsResponse(IpPacket requestPacket, byte[] responsePayload) {
+        /*try {
+            DNSMessage message = new DNSMessage(responsePayload);
+            Logger.info(message.toString());
+        } catch (IOException e) {
+            Logger.logException(e);
+        }*/
         UdpPacket udpOutPacket = (UdpPacket) requestPacket.getPayload();
         UdpPacket.Builder payLoadBuilder = new UdpPacket.Builder(udpOutPacket)
                 .srcPort(udpOutPacket.getHeader().getDstPort())
@@ -294,7 +298,6 @@ public class UdpProvider extends Provider {
         IpPacket parsedPacket;
         try {
             parsedPacket = (IpPacket) IpSelector.newPacket(packetData, 0, packetData.length);
-            //TODO: get rid of pcap4j
         } catch (Exception e) {
             Log.i(TAG, "handleDnsRequest: Discarding invalid IP packet", e);
             return;
@@ -308,7 +311,13 @@ public class UdpProvider extends Provider {
         InetAddress destAddr = parsedPacket.getHeader().getDstAddr();
         if (destAddr == null)
             return;
-        destAddr = InetAddressUtil.ipv4From(service.dnsServers.get(destAddr.getHostAddress()));
+        try {
+            destAddr = InetAddress.getByName(service.dnsServers.get(destAddr.getHostAddress()));
+        } catch (Exception e) {
+            Logger.logException(e);
+            Logger.error("handleDnsRequest: DNS server alias query failed for " + destAddr.getHostAddress());
+            return;
+        }
 
         UdpPacket parsedUdp = (UdpPacket) parsedPacket.getPayload();
 
@@ -339,11 +348,8 @@ public class UdpProvider extends Provider {
         String dnsQueryName = dnsMsg.getQuestion().name.toString();
 
         try {
-            String response = null;
-            if (dnsMsg.getQuestion().type == Record.TYPE.A) {
-                response = RulesResolver.resolve(dnsQueryName);
-            }
-            if (response != null) {
+            String response = RulesResolver.resolve(dnsQueryName, dnsMsg.getQuestion().type);
+            if (response != null && dnsMsg.getQuestion().type == Record.TYPE.A) {
                 Logger.info("Provider: Resolved " + dnsQueryName + "  Local resolver response: " + response);
                 DNSMessage.Builder builder = dnsMsg.asBuilder();
                 int[] ip = new int[4];
@@ -354,8 +360,14 @@ public class UdpProvider extends Provider {
                 }
                 builder.addAnswer(new Record<>(dnsQueryName, Record.TYPE.A, 1, 64, new A(ip[0], ip[1], ip[2], ip[3])));
                 handleDnsResponse(parsedPacket, builder.build().toArray());
+            } else if (response != null && dnsMsg.getQuestion().type == Record.TYPE.AAAA) {
+                Logger.info("Provider: Resolved " + dnsQueryName + "  Local resolver response: " + response);
+                DNSMessage.Builder builder = dnsMsg.asBuilder();
+                builder.addAnswer(new Record<>(dnsQueryName, Record.TYPE.AAAA, 1, 64,
+                        new AAAA(Inet6Address.getByName(response).getAddress())));
+                handleDnsResponse(parsedPacket, builder.build().toArray());
             } else {
-                Logger.info("Provider: Resolving " + dnsQueryName + "  Sending to " + destAddr);
+                Logger.info("Provider: Resolving " + dnsQueryName + " Type: " + dnsMsg.getQuestion().type.name() + " Sending to " + destAddr);
                 DatagramPacket outPacket = new DatagramPacket(dnsRawData, 0, dnsRawData.length, destAddr,
                         DNSServerHelper.getPortOrDefault(destAddr, parsedUdp.getHeader().getDstPort().valueAsInt()));
                 forwardPacket(outPacket, parsedPacket);
